@@ -4,7 +4,7 @@ import threading
 from http.server import HTTPServer, BaseHTTPRequestHandler
 import requests
 
-TOKEN = "9024589074:AAGOR8B30oFJCSkQp1Wfh8xAlakaAHEB_d0"
+TOKEN = "9024589074:AAH5tc2vYZi01dpFDEgUm37oLFHJoSfcUAI"
 MANAGER_USERNAME = "de_zhomur"
 PROGRAM_FILE_PATH = "program.zip"
 BASE_URL = f"https://api.telegram.org/bot{TOKEN}"
