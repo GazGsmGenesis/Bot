@@ -1,5 +1,7 @@
 import os
 import time
+import threading
+from http.server import HTTPServer, BaseHTTPRequestHandler
 import requests
 
 TOKEN = "9024589074:AAGOR8B30oFJCSkQp1Wfh8xAlakaAHEB_d0"
@@ -8,6 +10,19 @@ PROGRAM_FILE_PATH = "program.zip"
 BASE_URL = f"https://api.telegram.org/bot{TOKEN}"
 
 user_states = {}
+processed_updates = set()
+
+# Мини-сервер для Render
+class DummyHandler(BaseHTTPRequestHandler):
+    def do_GET(self):
+        self.send_response(200)
+        self.end_headers()
+        self.wfile.write(b"Bot is running")
+
+def run_dummy_server():
+    port = int(os.environ.get("PORT", 10000))
+    server = HTTPServer(("0.0.0.0", port), DummyHandler)
+    server.serve_forever()
 
 def send_message(chat_id, text, reply_markup=None):
     url = f"{BASE_URL}/sendMessage"
@@ -19,7 +34,7 @@ def send_message(chat_id, text, reply_markup=None):
 def send_document(chat_id, file_path, caption):
     url = f"{BASE_URL}/sendDocument"
     if not os.path.exists(file_path):
-        send_message(chat_id, "Ошибка: файл не найден.")
+        send_message(chat_id, "Error: file not found.")
         return
     with open(file_path, "rb") as f:
         files = {"document": f}
@@ -44,7 +59,7 @@ def get_yn_keyboard():
     }
 
 MODELS_TEXT = (
-    "Выбери модель (отправь цифру):\n\n"
+    "Choose a model (send a digit):\n\n"
     "1. iPhone 10\n"
     "2. iPhone 11\n"
     "3. iPhone 12\n"
@@ -65,6 +80,15 @@ MODELS_MAP = {
 }
 
 def handle_update(update):
+    update_id = update.get("update_id")
+    
+    # Защита от дублирования одного и того же события
+    if update_id in processed_updates:
+        return
+    processed_updates.add(update_id)
+    if len(processed_updates) > 100:
+        processed_updates.pop()
+
     message = update.get("message")
     if not message:
         return
@@ -77,7 +101,7 @@ def handle_update(update):
     
     if text == "/start":
         user_states[chat_id] = {}
-        send_message(chat_id, "Главное меню:", reply_markup=get_main_keyboard())
+        send_message(chat_id, "Main menu:", reply_markup=get_main_keyboard())
         return
 
     if text == "Key":
@@ -86,13 +110,13 @@ def handle_update(update):
         return
 
     if text == "Download":
-        send_message(chat_id, "Загрузка...")
-        send_document(chat_id, PROGRAM_FILE_PATH, "Файл программы:")
+        send_message(chat_id, "Downloading...")
+        send_document(chat_id, PROGRAM_FILE_PATH, "Your program file:")
         return
 
     if current_step == "waiting_for_model":
         if text not in MODELS_MAP:
-            send_message(chat_id, "Неверно. Отправь цифру от 1 до 7:")
+            send_message(chat_id, "Invalid choice. Send a digit from 1 to 7:")
             return
         
         selected_model = MODELS_MAP[text]
@@ -100,7 +124,7 @@ def handle_update(update):
         
         send_message(
             chat_id,
-            f"Выбрано: *{selected_model}*. Подтверждаешь? [y/n]",
+            f"Selected: *{selected_model}*. Confirm? [y/n]",
             reply_markup=get_yn_keyboard()
         )
         return
@@ -111,26 +135,28 @@ def handle_update(update):
             model = state.get("model")
             manager_kb = {
                 "inline_keyboard": [
-                    [{"text": "Написать менеджеру", "url": f"https://t.me/{MANAGER_USERNAME}"}]
+                    [{"text": "Contact Manager", "url": f"https://t.me/{MANAGER_USERNAME}"}]
                 ]
             }
             send_message(
                 chat_id,
-                f"Запрос по *{model}* принят. Напиши менеджеру для получения:",
+                f"Request for *{model}* accepted. Contact the manager to get it:",
                 reply_markup=manager_kb
             )
             user_states[chat_id] = {}
-            send_message(chat_id, "Главное меню:", reply_markup=get_main_keyboard())
+            send_message(chat_id, "Main menu:", reply_markup=get_main_keyboard())
             
         elif answer == "n":
             user_states[chat_id] = {}
-            send_message(chat_id, "Отменено.", reply_markup=get_main_keyboard())
+            send_message(chat_id, "Cancelled.", reply_markup=get_main_keyboard())
         else:
-            send_message(chat_id, "Отправь только *y* или *n*:")
+            send_message(chat_id, "Please send only *y* or *n*:")
         return
 
 def main():
-    print("Бот запущен!")
+    threading.Thread(target=run_dummy_server, daemon=True).start()
+    print("Bot started successfully!")
+    
     offset = 0
     while True:
         try:
@@ -143,7 +169,7 @@ def main():
                     offset = update["update_id"] + 1
                     handle_update(update)
         except Exception as e:
-            print(f"Ошибка: {e}")
+            print(f"Error: {e}")
             time.sleep(3)
 
 if __name__ == "__main__":
